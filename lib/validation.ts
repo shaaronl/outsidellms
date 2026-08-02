@@ -1,0 +1,3 @@
+import { z } from "zod";
+export const reviewSchema = z.object({ relevantToQuest: z.boolean(), confidence: z.number().min(0).max(1), reasonCodes: z.array(z.enum(["VISIBLE_STAGE","VISIBLE_VENUE","EVENT_CONTEXT_PLAUSIBLE","TEXT_MATCH","INSUFFICIENT_EVIDENCE","UNRELATED_CONTENT","POSSIBLE_DUPLICATE","UNSAFE_CONTENT"])), shortExplanation: z.string().max(300), requiresHumanReview: z.boolean(), safetyFlags: z.array(z.string()).max(8) });
+export const submissionSchema = z.object({ questId: z.string().min(1).max(80), caption: z.string().trim().max(500).optional(), visibility: z.enum(["private", "community", "public"]).default("community") });
