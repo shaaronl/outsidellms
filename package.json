@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && rm -rf dist && cp -R out dist && mkdir -p dist/server dist/.openai && cp scripts/sites-worker.js dist/server/index.js && cp .openai/hosting.json dist/.openai/hosting.json",
+    "build": "next build && rm -rf dist && cp -R out dist && mkdir -p dist/server dist/.openai && cp scripts/sites-worker.js dist/server/index.js && cp scripts/worker-hosting.json dist/.openai/hosting.json",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
