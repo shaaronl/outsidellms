@@ -12,13 +12,12 @@ npm test
 npm run build
 ```
 
-Copy `.env.example` to `.env.local` and provide only server-side values. Never prefix OpenAI, JamBase, or Spotify secrets with `NEXT_PUBLIC_`.
+Copy `.env.example` to `.env.local` and provide only server-side values. Never prefix OpenAI or JamBase secrets with `NEXT_PUBLIC_`.
 
 ## Integrations and fallback
 
-- **JamBase:** server-only adapter boundary. The demo serves labeled fictional fixtures until a verified `JAMBASE_API_KEY` and `JAMBASE_API_BASE_URL` are configured. This prevents invented API paths or fields.
+- **JamBase:** local development serves live events through `GET /api/events` using server-only `JBD_API_KEY`/`JBD_BASE_URL`; it retries transient errors and falls back to labeled demo fixtures when unavailable. The static hosted demo cannot execute this endpoint.
 - **OpenAI:** `server/api/review.ts` validates structured advisory output and fails closed to human review when no API key exists. Production should use the Responses API with strict JSON schema, capped input, timeout/retry, and a configurable vision-capable model.
-- **Spotify:** disabled demo state plus manual favorite artists. Implement authorization-code + PKCE/callback server flow only once a secure redirect and token store are configured.
 - **Convex:** absent from this runtime proof; the repository fallback is active. See `convex/README.md` to switch it on.
 
 ## Security decisions

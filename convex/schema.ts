@@ -3,7 +3,7 @@
 export const jamQuestTables = {
   users: ["authId", "username", "displayName", "homeLocation", "radiusMiles", "favoriteGenres", "favoriteArtistIds", "points", "streak", "profileVisibility", "createdAt", "updatedAt"],
   connectedAccounts: ["userId", "provider", "providerUserId", "encryptedTokenReference", "scopes", "expiresAt"],
-  artists: ["canonicalId", "jamBaseId", "spotifyId", "name", "imageUrl", "genres", "metadata", "updatedAt"],
+  artists: ["canonicalId", "jamBaseId", "name", "imageUrl", "genres", "metadata", "updatedAt"],
   venues: ["canonicalId", "jamBaseId", "name", "address", "city", "region", "country", "latitude", "longitude", "websiteUrl", "metadata", "updatedAt"],
   events: ["canonicalId", "jamBaseId", "name", "startAt", "endAt", "timezone", "venueId", "artistIds", "imageUrl", "ticketUrl", "sourceUrl", "status", "rawSourceVersion", "refreshedAt", "createdAt", "updatedAt"],
   rsvps: ["userId", "eventId", "status", "visibility", "createdAt", "updatedAt"],

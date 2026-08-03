@@ -7,9 +7,8 @@ Date: 2026-08-02. The available Sites connector confirms production runtime envi
 | Server runtime & environment secrets | Secret storage is confirmed; executable server artifact is not confirmed | The deployed demo is a static export. Compatible-host adapters reside in `/server` and must run server-side. |
 | Outbound HTTPS | Not verified without supplied credentials | JamBase/OpenAI adapters are disabled safely and demo fixtures are served. |
 | Convex client/server functions | Not configured/verified | Repository fallback + Convex schema blueprint retained. |
-| Spotify OAuth callback | Not configured/verified | Disabled, polished demo state; manual favorite artists work. |
 | Image/file uploads | Browser picker UI present; secure storage unverified | No image is uploaded in this hosted demo. Production must enforce MIME, dimensions, 5 MB max, metadata stripping, and non-SVG/non-executable rules server-side. |
 | Scheduled/background jobs | Not verified | Refresh is request-driven with cached fixtures. |
 | React framework | Confirmed | Next.js React static export served by a minimal Cloudflare Assets worker entrypoint. |
 
-The source proof uses `server/api/health.ts`, `lib/repositories/demo-repository.ts` (read/write-compatible boundary), and `server/api/events.ts`. The Sites build required a static `dist` artifact, so these server adapters are intentionally not executed in the deployed demo. A live JamBase endpoint is deliberately not guessed: configure the verified account-specific endpoint in `JAMBASE_API_BASE_URL` before enabling its adapter.
+Local development uses `app/api/events/route.ts` plus `lib/jambase/client.ts`. The Sites build requires a static `dist` artifact, so the server route is temporarily excluded only from its static package and is not executed in the deployed demo. JamBase's documented v3 base is `https://api.data.jambase.com/v3`; configure `JBD_API_KEY` locally without exposing it.
