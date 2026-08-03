@@ -60,11 +60,11 @@ async function request(path: string): Promise<JbdPage> {
   throw new JamBaseError(502, null, "JamBase is temporarily unavailable.");
 }
 
-export async function searchJamBaseEvents(input: { cityId?: string; metroId?: string; query?: string; page?: number }) {
+export async function searchJamBaseEvents(input: { cityId?: string; metroId?: string; query?: string; searchKind?: "event" | "artist" | "venue"; page?: number }) {
   const params = new URLSearchParams({ perPage: "20", page: String(input.page || 1) });
   if (input.cityId) params.set("geoCityId", input.cityId);
   else params.set("geoMetroId", input.metroId || "jambase:1");
-  if (input.query?.trim()) params.set("name", input.query.trim().slice(0, 100));
+  if (input.query?.trim()) params.set(input.searchKind === "artist" ? "artistName" : input.searchKind === "venue" ? "venueName" : "name", input.query.trim().slice(0, 100));
   const body = await request(`/events?${params}`);
   const rows = Array.isArray(body.events) ? body.events.map(asRecord).map((event) => normalizeEvent(event)) : [];
   return { events: rows, pagination: asRecord(body.pagination), refreshedAt: new Date().toISOString() };
