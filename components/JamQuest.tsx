@@ -12,6 +12,12 @@ type Outfit = { hair: "Beanie" | "Braids" | "Bandana"; top: "Sun tee" | "Mesh sh
 
 const nav = [["feed", "Pulse"], ["discover", "Lineup"], ["quests", "Questbook"], ["map", "Map"], ["rewards", "Fog Coins"], ["profile", "You"]] as const;
 const crewStatuses = ["At Lands End", "Near Twin Peaks", "Getting food", "Taking a break", "Heading to next set", "Find me at our meeting point"];
+const demoLocations: Location[] = [
+  { id: "jambase:4226966", label: "San Francisco" },
+  { id: "jambase:1", label: "New York metro" },
+  { id: "jambase:2", label: "Los Angeles" },
+  { id: "jambase:3", label: "Chicago" },
+];
 const festivalQuests: FestivalQuest[] = [
   { id: "identity", number: "1.1", title: "Enter the Lands", task: "Create a display name and select a profile icon.", time: "20 seconds", verification: "Form submission", reward: 10, unlock: "Personal profile card", icon: "✦", detail: "A quick first signal that teaches people how their festival field guide works.", action: "identity" },
   { id: "avatar", number: "1.2", title: "Festival Fit", task: "Customize a simple illustrated avatar.", time: "30–60 seconds", verification: "Avatar customization saved", reward: 15, unlock: "Avatar Closet", icon: "◒", detail: "The initial quest provides a limited set of clothing. After completing it, players can purchase additional virtual clothing with Fog Coins.", choices: ["Hair or headwear", "Top", "Bottom", "Accessory", "Background"], action: "avatar" },
@@ -118,7 +124,7 @@ export default function JamQuest() {
       fetch(`/api/events?${parameters}`, { signal: controller.signal })
         .then(async (response) => { if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Live lineup unavailable."); return response.json(); })
         .then((data) => { if (Array.isArray(data.events)) { setEventData(data.events); setEventSource("JamBase"); setEventNotice(data.events.length ? `Live JamBase lineup · refreshed ${new Date(data.refreshedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "No live shows matched that search."); } })
-        .catch((error: Error) => { if (error.name !== "AbortError") setEventNotice("Live lineup unavailable; showing festival demo cards."); });
+        .catch((error: Error) => { if (error.name !== "AbortError") { setEventData(events); setEventSource("demo"); setEventNotice("Live lineup unavailable; showing festival demo cards."); } });
     }, query ? 400 : 0);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [locationId, query, searchKind]);
@@ -132,10 +138,10 @@ export default function JamQuest() {
   const findLocation = async () => {
     if (locationQuery.trim().length < 2) { setLocationNotice("Enter a city, such as San Francisco."); return; }
     setLocationNotice("Finding festival city…"); setLocationResults([]);
-    try { const response = await fetch(`/api/locations?q=${encodeURIComponent(locationQuery.trim())}`); const data = await response.json(); if (!response.ok) throw new Error(data.error || "Unable to look up that city."); const matches = Array.isArray(data.locations) ? data.locations : []; setLocationResults(matches); setLocationNotice(matches.length ? "Choose a city below." : "No matching city was found."); } catch (error) { setLocationNotice(error instanceof Error ? error.message : "Unable to look up that city."); }
+    try { const response = await fetch(`/api/locations?q=${encodeURIComponent(locationQuery.trim())}`); const data = await response.json(); if (!response.ok) throw new Error(data.error || "Unable to look up that city."); const matches = Array.isArray(data.locations) ? data.locations : []; setLocationResults(matches); setLocationNotice(matches.length ? "Choose a city below." : "No matching city was found."); } catch { const needle = locationQuery.trim().toLowerCase(); const matches = demoLocations.filter((location) => location.label.toLowerCase().includes(needle)); setLocationResults(matches); setLocationNotice(matches.length ? "Live city lookup is unavailable here; choose a demo city below." : "No matching city was found. Try San Francisco, New York, Los Angeles, or Chicago."); }
   };
   const chooseLocation = (location: Location) => { setLocationId(location.id); setLocationLabel(location.label); setLocationResults([]); setLocationQuery(""); setQuery(""); setLocationNotice(`Lineup set for ${location.label}.`); };
-  const lineup = useMemo(() => eventData.filter((item) => !query || [item.name, item.venue, item.artists.join(" ")].join(" ").toLowerCase().includes(query.toLowerCase())).sort((a, b) => rankEvent(b, { artists: ["Nova Arcade"], genres: ["indie", "alternative"], maxDistance: 20 }) - rankEvent(a, { artists: ["Nova Arcade"], genres: ["indie", "alternative"], maxDistance: 20 })), [eventData, query]);
+  const lineup = useMemo(() => eventData.filter((item) => { if (!query) return true; const needle = query.toLowerCase(); const haystack = searchKind === "artist" ? item.artists.join(" ") : searchKind === "venue" ? item.venue : item.name; return haystack.toLowerCase().includes(needle); }).sort((a, b) => rankEvent(b, { artists: ["Nova Arcade"], genres: ["indie", "alternative"], maxDistance: 20 }) - rankEvent(a, { artists: ["Nova Arcade"], genres: ["indie", "alternative"], maxDistance: 20 })), [eventData, query, searchKind]);
   const chapterProgress = festivalQuests.slice(0, 4).filter((quest) => completed.includes(quest.id)).length;
 
   if (!demo && page === "home") return <Landing explore={() => { setDemo(true); go("quests"); }} begin={() => { setDemo(true); go("onboarding"); }} />;
