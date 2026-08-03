@@ -8,7 +8,7 @@ export default {
     if (response.status !== 404) return response;
     const url = new URL(request.url);
     if (request.method === "GET" && !url.pathname.includes(".")) {
-      return assets.fetch(new Request(new URL("/", url), request));
+      return assets.fetch(new Request(new URL("/index.html", url), request));
     }
     return response;
   }
