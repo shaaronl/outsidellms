@@ -19,6 +19,7 @@ export const progressSchema = z.object({
   avatarIcon: z.enum(["✦", "☼", "✹", "☾", "♣", "◒"]),
   outfit: outfitSchema,
   favoriteArtists: z.array(z.object({ id: z.string().min(1).max(80), name: z.string().min(1).max(160), detail: z.string().max(240) })).max(3).default([]),
+  purchasedRewards: z.array(z.string().min(1).max(80)).max(24).default([]),
 });
 
 export type SavedProgress = z.infer<typeof progressSchema>;
