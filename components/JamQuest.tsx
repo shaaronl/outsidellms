@@ -18,6 +18,9 @@ type Outfit = { body: "Feminine" | "Masculine" | "Androgynous"; skinTone: "Fair"
 const discoveryNav = [["feed", "Pulse"], ["discover", "Lineup"]] as const;
 const adventureNav = [["quests", "Questbook"], ["map", "Map"], ["rewards", "Sparks"]] as const;
 const nav = [...discoveryNav, ...adventureNav, ["profile", "You"]] as const;
+const INACTIVITY_LIMIT_MS = 30 * 60 * 1000;
+const restorablePages = new Set(["feed", "discover", "quests", "map", "rewards", "profile", "onboarding", "avatar", "crew", "chapter2"]);
+const sessionStorageKey = (email: string, kind: "page" | "active") => `jamquest:${kind}:${email.trim().toLowerCase()}`;
 const crewStatuses = ["At Lands End", "Near Twin Peaks", "Getting food", "Taking a break", "Heading to next set", "Find me at our meeting point"];
 const demoLocations: Location[] = [
   { id: "jambase:4226966", label: "San Francisco" },
@@ -144,21 +147,49 @@ export default function JamQuest() {
   useEffect(() => {
     fetch("/api/auth/session", { credentials: "same-origin" })
       .then(async (response) => response.ok ? (await response.json()).user as AuthUser : null)
-      .then((user) => { setAuthUser(user); if (user?.displayName) setDisplayName(user.displayName); })
+      .then(async (user) => {
+        if (!user) { setAuthUser(null); return; }
+        const activeKey = sessionStorageKey(user.email, "active");
+        const pageKey = sessionStorageKey(user.email, "page");
+        const lastActive = Number(window.localStorage.getItem(activeKey) || 0);
+        if (lastActive && Date.now() - lastActive >= INACTIVITY_LIMIT_MS) {
+          await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+          window.localStorage.removeItem(activeKey); window.localStorage.removeItem(pageKey);
+          setAuthUser(null); setDemo(false); setPage("home"); return;
+        }
+        const savedPage = window.localStorage.getItem(pageKey) || "quests";
+        window.localStorage.setItem(activeKey, String(Date.now()));
+        setAuthUser(user); setDemo(true); setPage(restorablePages.has(savedPage) ? savedPage : "quests");
+        if (user.displayName) setDisplayName(user.displayName);
+      })
       .catch(() => setAuthUser(null))
       .finally(() => setAuthReady(true));
   }, []);
   useEffect(() => {
+    if (!authUser) return;
+    const activeKey = sessionStorageKey(authUser.email, "active");
+    const pageKey = sessionStorageKey(authUser.email, "page");
+    window.localStorage.setItem(pageKey, restorablePages.has(page) ? page : "quests");
+    let lastRecorded = Number(window.localStorage.getItem(activeKey) || Date.now());
+    const recordActivity = () => { const now = Date.now(); if (now - lastRecorded >= INACTIVITY_LIMIT_MS) return; if (now - lastRecorded < 15_000) return; lastRecorded = now; window.localStorage.setItem(activeKey, String(now)); };
+    const events: (keyof WindowEventMap)[] = ["pointerdown", "keydown", "scroll", "touchstart"];
+    events.forEach((eventName) => window.addEventListener(eventName, recordActivity, { passive: true }));
+    return () => { events.forEach((eventName) => window.removeEventListener(eventName, recordActivity)); };
+  }, [authUser, page]);
+  useEffect(() => {
     if (!authUser) { setProgressReady(false); return; }
     let active = true;
     fetch("/api/progress", { credentials: "same-origin" })
-      .then(async (response) => response.ok ? (await response.json()).progress as SavedProgress | null : null)
+      .then(async (response) => { if (!response.ok) throw new Error("Progress could not be loaded."); return (await response.json()).progress as SavedProgress | null; })
       .then((saved) => {
-        if (!active || !saved) return;
-        setCompleted(saved.completedQuestIds); setCoins(saved.coins); setChapterBonusAwarded(saved.chapterBonusAwarded);
-        setDisplayName(saved.displayName); setAvatarIcon(saved.avatarIcon); setOutfit(saved.outfit); setFavoriteArtists(saved.favoriteArtists || []); setPurchasedRewards(saved.purchasedRewards || []); setLikes(saved.pulseLikes || []); setPulsePosts(saved.pulsePosts || []); setPulseComments(saved.pulseComments || {}); setPulseReported(saved.pulseReported || []);
+        if (!active) return;
+        if (saved) {
+          setCompleted(saved.completedQuestIds); setCoins(saved.coins); setChapterBonusAwarded(saved.chapterBonusAwarded);
+          setDisplayName(saved.displayName); setAvatarIcon(saved.avatarIcon); setOutfit(saved.outfit); setFavoriteArtists(saved.favoriteArtists || []); setPurchasedRewards(saved.purchasedRewards || []); setLikes(saved.pulseLikes || []); setPulsePosts(saved.pulsePosts || []); setPulseComments(saved.pulseComments || {}); setPulseReported(saved.pulseReported || []);
+        }
+        setProgressReady(true);
       })
-      .finally(() => { if (active) setProgressReady(true); });
+      .catch(() => { if (active) { setProgressReady(false); setToast("Your saved field guide could not be loaded. Nothing was overwritten—refresh to try again."); } });
     return () => { active = false; };
   }, [authUser]);
   useEffect(() => {
@@ -226,6 +257,7 @@ export default function JamQuest() {
   const lineup = useMemo(() => eventData.filter((item) => { if (!query) return true; const needle = query.toLowerCase(); const haystack = searchKind === "artist" ? item.artists.join(" ") : searchKind === "venue" ? item.venue : item.name; return haystack.toLowerCase().includes(needle); }).sort((a, b) => rankEvent(b, { artists: ["Nova Arcade"], genres: ["indie", "alternative"], maxDistance: 20 }) - rankEvent(a, { artists: ["Nova Arcade"], genres: ["indie", "alternative"], maxDistance: 20 })), [eventData, query, searchKind]);
   const chapterProgress = festivalQuests.filter((quest) => completed.includes(quest.id)).length;
 
+  if (!authReady) return <AuthLoading />;
   if (!demo && page === "home") {
     if (authScreen) {
       if (!authReady) return <AuthLoading />;
@@ -242,7 +274,7 @@ export default function JamQuest() {
     {page === "quests" && <Questbook coins={coins} completed={completed} progress={chapterProgress} chapterBonusAwarded={chapterBonusAwarded} openQuest={openQuest} />}
     {page === "map" && <FestivalMap mapViews={mapViews} setMapViews={setMapViews} completed={completed} complete={complete} />}
     {page === "rewards" && <Rewards coins={coins} outfit={outfit} setCoins={setCoins} purchased={purchasedRewards} setPurchased={setPurchasedRewards} notify={showToast} />}
-    {page === "profile" && <Profile name={displayName} email={authUser?.email} icon={avatarIcon} outfit={outfit} coins={coins} completed={completed} favoriteArtists={favoriteArtists} setFavoriteArtists={setFavoriteArtists} go={go} complete={complete} signOut={authUser ? async () => { const progress: SavedProgress = { completedQuestIds: completed, coins, chapterBonusAwarded, displayName, avatarIcon: avatarIcon as SavedProgress["avatarIcon"], outfit, favoriteArtists, purchasedRewards, pulseLikes: likes, pulsePosts, pulseComments, pulseReported }; await fetch("/api/progress", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(progress) }).catch(() => {}); await fetch("/api/auth/logout", { method: "POST" }); setProgressReady(false); setAuthUser(null); setAuthScreen(false); setPage("home"); setDemo(false); } : undefined} />}
+    {page === "profile" && <Profile name={displayName} email={authUser?.email} icon={avatarIcon} outfit={outfit} coins={coins} completed={completed} favoriteArtists={favoriteArtists} setFavoriteArtists={setFavoriteArtists} go={go} complete={complete} signOut={authUser ? async () => { const progress: SavedProgress = { completedQuestIds: completed, coins, chapterBonusAwarded, displayName, avatarIcon: avatarIcon as SavedProgress["avatarIcon"], outfit, favoriteArtists, purchasedRewards, pulseLikes: likes, pulsePosts, pulseComments, pulseReported }; await fetch("/api/progress", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(progress) }).catch(() => {}); await fetch("/api/auth/logout", { method: "POST" }); window.localStorage.removeItem(sessionStorageKey(authUser.email, "active")); window.localStorage.removeItem(sessionStorageKey(authUser.email, "page")); setProgressReady(false); setAuthUser(null); setAuthScreen(false); setPage("home"); setDemo(false); } : undefined} />}
     {page === "onboarding" && <Identity name={displayName} setName={setDisplayName} icon={avatarIcon} setIcon={setAvatarIcon} finish={() => { complete(festivalQuests[0]); go("avatar"); }} />}
     {page === "avatar" && <AvatarCloset icon={avatarIcon} setIcon={setAvatarIcon} outfit={outfit} setOutfit={setOutfit} finish={() => { complete(festivalQuests[1]); go("quests"); }} />}
     {page === "crew" && <Crew status={crewStatus} setStatus={updateCrewStatus} expiresAt={crewStatusExpiresAt} finish={() => { complete(festivalQuests[2]); go("quests"); }} />}
