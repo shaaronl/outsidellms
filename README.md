@@ -12,11 +12,11 @@ npm test
 npm run build
 ```
 
-Copy `.env.example` to `.env.local` and provide only server-side values. Never prefix OpenAI or JamBase secrets with `NEXT_PUBLIC_`.
+Copy `.env.example` to `.env.local` and provide only server-side values. Never prefix OpenAI or Ticketmaster secrets with `NEXT_PUBLIC_`.
 
 ## Integrations and fallback
 
-- **JamBase:** local development serves live events through `GET /api/events` using server-only `JBD_API_KEY`/`JBD_BASE_URL`; it retries transient errors and falls back to labeled demo fixtures when unavailable. The static hosted demo cannot execute this endpoint.
+- **Ticketmaster:** local development serves real, city-filtered events through `GET /api/events` using the server-only `TICKETMASTER_API_KEY`. City searches resolve through `GET /api/locations`, and event results can be narrowed by event, artist, or venue. Previous-city results are cleared while a new search loads; if Ticketmaster is unavailable or the key is missing, JamQuest displays an explicit empty/error state instead of presenting fictional listings as live data. The static hosted demo cannot execute this endpoint unless its runtime provides the corresponding server route and secret.
 - **OpenAI:** `server/api/review.ts` validates structured advisory output and fails closed to human review when no API key exists. Production should use the Responses API with strict JSON schema, capped input, timeout/retry, and a configurable vision-capable model.
 - **Convex:** absent from this runtime proof; the repository fallback is active. See `convex/README.md` to switch it on.
 
