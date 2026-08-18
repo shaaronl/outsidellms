@@ -1,6 +1,5 @@
 {
   "project_id": "appgprj_6a6fcc33fcf08191ac0988e6f68f96ed",
-  "framework": "nextjs",
-  "build_command": "npm run build",
-  "output_directory": "dist"
+  "d1": "DB",
+  "r2": null
 }

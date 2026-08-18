@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Enter a city name." }, { status: 400 });
   }
   const query = aliases[rawQuery.toLowerCase()] ?? rawQuery;
+  if (process.env.TICKETMASTER_API_KEY) return NextResponse.json({ locations: [{ id: `tm:${encodeURIComponent(query)}`, label: query }] });
   try {
     return NextResponse.json({ locations: await searchJamBaseCities(query) }, { headers: { "Cache-Control": "private, max-age=300" } });
   } catch (error) {
