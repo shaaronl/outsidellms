@@ -345,7 +345,7 @@ function RewardPreviewVisual({ itemId, outfit }: { itemId: string; outfit: Outfi
   const previewOutfit = itemId === "holo-jacket" ? { ...outfit, top: "Field jacket" as const } : outfit;
   const labels: Record<string, string> = { "butterfly-wings": "Prism wings equipped", "holo-jacket": "Holographic jacket equipped", "fog-fox": "Fog Fox companion equipped", "flower-crown": "Golden Poppy Crown equipped", "cloud-boots": "Cloudstep Boots equipped", "laser-aura": "Laser Aura equipped", "moss-frame": "Moss Frame equipped" };
   return <div className={`reward-visual avatar-reward-preview item-${itemId}`}>
-    <div className="reward-avatar-stage"><OutfitAvatar outfit={previewOutfit} compact rewardId={itemId} /></div>
+    <div className="avatar-preview-center"><div className="reward-avatar-stage"><OutfitAvatar outfit={previewOutfit} compact rewardId={itemId} /></div></div>
     <div className="preview-label">✓ {labels[itemId]}</div>
   </div>;
 }
