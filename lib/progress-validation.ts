@@ -26,6 +26,7 @@ export const progressSchema = z.object({
   favoriteArtists: z.array(z.object({ id: z.string().min(1).max(80), name: z.string().min(1).max(160), detail: z.string().max(240) })).max(3).default([]),
   purchasedRewards: z.array(z.string().min(1).max(80)).max(24).default([]),
   equippedReward: z.string().max(80).default(""),
+  rsvps: z.record(z.string(), z.enum(["interested", "going", "attended"])).default({}),
   pulseLikes: z.array(z.string().min(1).max(80)).max(200).default([]),
   pulsePosts: z.array(pulsePostSchema).max(100).default([]),
   pulseComments: z.record(z.string(), z.array(pulseCommentSchema).max(100)).default({}),

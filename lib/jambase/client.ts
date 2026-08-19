@@ -32,6 +32,7 @@ function normalizeEvent(raw: JbdEvent): Event {
   const offers = Array.isArray(raw.offers) ? raw.offers.map(asRecord) : [];
   const primaryOffer = offers.find((offer) => text(offer.category) === "ticketingLinkPrimary") ?? offers[0];
   const startAt = text(raw.startDate);
+  const parsedStartAt = Date.parse(startAt);
   return {
     id: text(raw.identifier) || `jambase:${crypto.randomUUID()}`,
     name: text(raw.name) || "Untitled event",
@@ -39,7 +40,10 @@ function normalizeEvent(raw: JbdEvent): Event {
     city: [text(address.addressLocality), text(asRecord(address.addressRegion).alternateName || asRecord(address.addressRegion).name)].filter(Boolean).join(", ") || "Location TBA",
     genre: genres[0] || "Live music", artists: performers.length ? performers : ["Lineup TBA"], distance: 0,
     ticketUrl: primaryOffer ? httpsUrl(primaryOffer.url) : undefined, source: "JamBase",
-    image: httpsUrl(raw.image) || "linear-gradient(135deg,#3f2665,#d44d88)", going: 0, interested: 0
+    image: httpsUrl(raw.image) || "linear-gradient(135deg,#3f2665,#d44d88)", going: 0, interested: 0,
+    startAt: Number.isFinite(parsedStartAt) ? parsedStartAt : undefined,
+    status: text(raw.eventStatus).toLowerCase().includes("cancel") ? "cancelled" : text(raw.eventStatus).toLowerCase().includes("postpon") ? "postponed" : "scheduled",
+    lastVerifiedAt: Date.now(),
   };
 }
 
