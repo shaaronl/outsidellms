@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { events, feed, leaderboard, quests } from "@/lib/demo-data";
+import { events } from "@/lib/demo-data";
 import { rankEvent } from "@/lib/ranking";
-import type { Event, FeedItem, RsvpStatus } from "@/lib/types";
+import type { Event, RsvpStatus } from "@/lib/types";
 import type { SavedProgress } from "@/lib/progress-validation";
 
 type Location = { id: string; label: string };
@@ -15,7 +15,6 @@ type SearchKind = "event" | "artist" | "venue";
 type AuthUser = { email: string; displayName: string };
 type UnlockGuide = { title: string; description: string; destination: string; page: string; icon: string };
 type ArtistChoice = { id: string; name: string; detail: string };
-type PulseComment = { id: string; text: string; replyTo?: string };
 type PendingAction = { kind: "save-event" | "open-feature"; eventId?: string; destination: string; reason: string; idempotencyKey?: string };
 type Outfit = { body: "Feminine" | "Masculine" | "Androgynous"; skinTone: "Fair" | "Light" | "Medium" | "Tan" | "Deep" | "Rich"; hair: "Cropped" | "Curls" | "Long waves" | "Braids"; hat: "None" | "Beanie" | "Bandana"; top: "Sun tee" | "Mesh shirt" | "Field jacket"; bottom: "Utility shorts" | "Flares" | "Cargo pants"; accessory: "Bandana" | "Sunnies" | "Pins"; background: "Golden fog" | "Forest" | "Blue sky" };
 
@@ -144,6 +143,8 @@ export default function JamQuest() {
   const savePrototypeProgress = useMutation(api.jamquest.saveProgress);
   const saveRsvp = useMutation(api.rsvps.set);
   const authUser: AuthUser | null = isAuthenticated && account ? { email: account.email, displayName: account.displayName } : null;
+  const authEmail = authUser?.email ?? "";
+  const authDisplayName = authUser?.displayName ?? "";
   const authReady = !authLoading && (!isAuthenticated || account !== undefined);
   const [progressReady, setProgressReady] = useState(false);
   const [authScreen, setAuthScreen] = useState(false);
@@ -168,45 +169,73 @@ export default function JamQuest() {
   const [avatarIcon, setAvatarIcon] = useState("✦");
   const [outfit, setOutfit] = useState<Outfit>({ body: "Androgynous", skinTone: "Medium", hair: "Curls", hat: "Beanie", top: "Sun tee", bottom: "Utility shorts", accessory: "Bandana", background: "Golden fog" });
   const [displayName, setDisplayName] = useState("Ari Morgan");
-  const [crewStatus, setCrewStatus] = useState("Taking a break");
-  const [crewStatusExpiresAt, setCrewStatusExpiresAt] = useState(() => Date.now() + 30 * 60 * 1000);
   const [mapViews, setMapViews] = useState<string[]>([]);
-  const [likes, setLikes] = useState<string[]>([]);
   const [toast, setToast] = useState("");
   const [unlockGuide, setUnlockGuide] = useState<UnlockGuide | null>(null);
   const [chapterReveal, setChapterReveal] = useState(false);
   const [favoriteArtists, setFavoriteArtists] = useState<ArtistChoice[]>([]);
   const [purchasedRewards, setPurchasedRewards] = useState<string[]>([]);
   const [equippedReward, setEquippedReward] = useState("");
-  const [pulsePosts, setPulsePosts] = useState<FeedItem[]>([]);
-  const [pulseComments, setPulseComments] = useState<Record<string, PulseComment[]>>({});
-  const [pulseReported, setPulseReported] = useState<string[]>([]);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const lastSavedProgressRef = useRef<string | null>(null);
+  const progressPayload = useMemo(() => {
+    const progress: SavedProgress = {
+      completedQuestIds: completed,
+      coins,
+      chapterBonusAwarded,
+      displayName,
+      avatarIcon: avatarIcon as SavedProgress["avatarIcon"],
+      outfit,
+      favoriteArtists,
+      purchasedRewards,
+      equippedReward,
+      rsvps: {},
+    };
+    return JSON.stringify(progress);
+  }, [completed, coins, chapterBonusAwarded, displayName, avatarIcon, outfit, favoriteArtists, purchasedRewards, equippedReward]);
+  const latestProgressPayloadRef = useRef(progressPayload);
 
   useEffect(() => {
     if (!isAuthenticated || !account || account.provisioned) return;
     void provisionAccount({ displayName: account.displayName }).catch(() => setToast("Your account opened, but its private profile could not be prepared. Refresh to retry."));
   }, [account, isAuthenticated, provisionAccount]);
   useEffect(() => {
-    if (!authUser) {
+    latestProgressPayloadRef.current = progressPayload;
+  }, [progressPayload]);
+  useEffect(() => {
+    if (!authEmail) {
       setProgressReady(false);
       return;
     }
-    const savedPage = window.localStorage.getItem(pageStorageKey(authUser.email)) || "today";
+    const savedPage = window.localStorage.getItem(pageStorageKey(authEmail)) || "today";
     setDemo(true);
     setPage((current) => current === "home" ? (restorablePages.has(savedPage) ? savedPage : "today") : current);
-    if (authUser.displayName) setDisplayName(authUser.displayName);
-  }, [authUser?.email, authUser?.displayName]);
+    if (authDisplayName) setDisplayName(authDisplayName);
+  }, [authEmail, authDisplayName]);
   useEffect(() => {
-    if (!authUser) return;
-    window.localStorage.setItem(pageStorageKey(authUser.email), restorablePages.has(page) ? page : "today");
-  }, [authUser, page]);
+    if (!authEmail) return;
+    window.localStorage.setItem(pageStorageKey(authEmail), restorablePages.has(page) ? page : "today");
+  }, [authEmail, page]);
   useEffect(() => {
-    if (!isAuthenticated) { setProgressReady(false); return; }
+    if (!isAuthenticated) { setProgressReady(false); setSaveState("idle"); lastSavedProgressRef.current = null; return; }
     if (savedProgress === undefined) return;
     if (savedProgress) {
       setCompleted(savedProgress.completedQuestIds); setCoins(savedProgress.coins); setChapterBonusAwarded(savedProgress.chapterBonusAwarded);
-      setDisplayName(savedProgress.displayName); setAvatarIcon(savedProgress.avatarIcon); setOutfit(savedProgress.outfit); setFavoriteArtists(savedProgress.favoriteArtists || []); setPurchasedRewards(savedProgress.purchasedRewards || []); setEquippedReward(savedProgress.equippedReward || ""); setLikes(savedProgress.pulseLikes || []); setPulsePosts(savedProgress.pulsePosts || []); setPulseComments(savedProgress.pulseComments || {}); setPulseReported(savedProgress.pulseReported || []);
+      setDisplayName(savedProgress.displayName); setAvatarIcon(savedProgress.avatarIcon); setOutfit(savedProgress.outfit); setFavoriteArtists(savedProgress.favoriteArtists || []); setPurchasedRewards(savedProgress.purchasedRewards || []); setEquippedReward(savedProgress.equippedReward || "");
+      lastSavedProgressRef.current = JSON.stringify({
+        completedQuestIds: savedProgress.completedQuestIds,
+        coins: savedProgress.coins,
+        chapterBonusAwarded: savedProgress.chapterBonusAwarded,
+        displayName: savedProgress.displayName,
+        avatarIcon: savedProgress.avatarIcon,
+        outfit: savedProgress.outfit,
+        favoriteArtists: savedProgress.favoriteArtists || [],
+        purchasedRewards: savedProgress.purchasedRewards || [],
+        equippedReward: savedProgress.equippedReward || "",
+        rsvps: {},
+      } satisfies SavedProgress);
+    } else {
+      lastSavedProgressRef.current = null;
     }
     setProgressReady(true);
   }, [isAuthenticated, savedProgress]);
@@ -215,16 +244,21 @@ export default function JamQuest() {
     if (savedRsvps !== undefined) setRsvps(savedRsvps.byProviderId as Record<string, RsvpStatus>);
   }, [isAuthenticated, savedRsvps]);
   useEffect(() => {
-    if (!authUser || !progressReady) return;
+    if (!authEmail || !progressReady || progressPayload === lastSavedProgressRef.current) return;
     setSaveState("saving");
     const timer = window.setTimeout(() => {
-      const progress: SavedProgress = { completedQuestIds: completed, coins, chapterBonusAwarded, displayName, avatarIcon: avatarIcon as SavedProgress["avatarIcon"], outfit, favoriteArtists, purchasedRewards, equippedReward, rsvps: {}, pulseLikes: likes, pulsePosts, pulseComments, pulseReported };
-      savePrototypeProgress({ payload: JSON.stringify(progress) })
-        .then(() => setSaveState("saved"))
-        .catch(() => setSaveState("error"));
+      savePrototypeProgress({ payload: progressPayload })
+        .then(() => {
+          if (latestProgressPayloadRef.current !== progressPayload) return;
+          lastSavedProgressRef.current = progressPayload;
+          setSaveState("saved");
+        })
+        .catch(() => {
+          if (latestProgressPayloadRef.current === progressPayload) setSaveState("error");
+        });
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [authUser, progressReady, completed, coins, chapterBonusAwarded, displayName, avatarIcon, outfit, favoriteArtists, purchasedRewards, equippedReward, likes, pulsePosts, pulseComments, pulseReported, savePrototypeProgress]);
+  }, [authEmail, progressReady, progressPayload, savePrototypeProgress]);
   const showToast = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2800); };
   const go = (next: string) => { setSelected(null); setPage(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const requestSignIn = (action: PendingAction | null, reason: string) => { setPendingAction(action); setAuthReason(reason); setAuthScreen(true); };
@@ -272,7 +306,6 @@ export default function JamQuest() {
     else if (guide) setUnlockGuide({ ...guide, title: quest.unlock, icon: quest.icon });
     showToast(chapterTwoFinished ? `+${quest.reward + 100} Sparks · Chapter 2 complete` : chapterOneFinished && !festivalQuests.every((item) => completed.includes(item.id)) ? `+${quest.reward} Sparks · Chapter 2 unlocked` : chapterBonus ? `+${quest.reward + 50} Sparks · Chapter 1 bonus unlocked` : `+${quest.reward} Sparks · ${quest.unlock} unlocked`);
   };
-  const updateCrewStatus = (status: string) => { setCrewStatus(status); setCrewStatusExpiresAt(Date.now() + 30 * 60 * 1000); };
   const openQuest = (quest: FestivalQuest) => {
     if (!authUser) {
       requestSignIn({ kind: "open-feature", destination: "quests", reason: "Create an account to start a quest and keep your progress." }, "Create an account to start a quest and keep your progress.");
@@ -301,13 +334,6 @@ export default function JamQuest() {
     }, query ? 400 : 0);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [locationId, locationLabel, query, searchKind]);
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (crewStatusExpiresAt <= Date.now() && crewStatus) { setCrewStatus(""); setToast("Your crew status expired after 30 minutes."); }
-    }, 30_000);
-    return () => window.clearInterval(timer);
-  }, [crewStatus, crewStatusExpiresAt]);
-
   const findLocation = async () => {
     if (locationQuery.trim().length < 2) { setLocationNotice("Enter a city, such as San Francisco."); return; }
     setLocationNotice("Finding festival city…"); setLocationResults([]);
@@ -320,7 +346,7 @@ export default function JamQuest() {
   const chapterProgress = festivalQuests.filter((quest) => completed.includes(quest.id)).length;
 
   useEffect(() => {
-    if (!authUser || !progressReady || !pendingAction) return;
+    if (!authEmail || !progressReady || !pendingAction) return;
     if (pendingAction.kind === "save-event" && pendingAction.eventId) {
       const event = selected?.id === pendingAction.eventId ? selected : eventData.find((candidate) => candidate.id === pendingAction.eventId);
       const action = pendingAction;
@@ -336,7 +362,7 @@ export default function JamQuest() {
       setPage(pendingAction.destination);
     }
     setPendingAction(null);
-  }, [authUser, eventData, pendingAction, persistRsvp, progressReady, selected]);
+  }, [authEmail, eventData, pendingAction, persistRsvp, progressReady, selected]);
 
   if (!authReady) return <AuthLoading />;
   if (authScreen) {
@@ -355,7 +381,7 @@ export default function JamQuest() {
     {page === "quests" && <Questbook coins={coins} completed={completed} progress={chapterProgress} chapterBonusAwarded={chapterBonusAwarded} openQuest={openQuest} />}
     {page === "map" && <FestivalMap mapViews={mapViews} setMapViews={setMapViews} />}
     {page === "rewards" && <Rewards coins={coins} outfit={outfit} setCoins={setCoins} purchased={purchasedRewards} setPurchased={setPurchasedRewards} notify={showToast} />}
-    {page === "profile" && (authUser ? <Profile name={displayName} email={authUser.email} icon={avatarIcon} outfit={outfit} equippedReward={equippedReward} coins={coins} completed={completed} savedCount={Object.keys(rsvps).length} favoriteArtists={favoriteArtists} setFavoriteArtists={setFavoriteArtists} go={go} complete={complete} signOut={async () => { const progress: SavedProgress = { completedQuestIds: completed, coins, chapterBonusAwarded, displayName, avatarIcon: avatarIcon as SavedProgress["avatarIcon"], outfit, favoriteArtists, purchasedRewards, equippedReward, rsvps: {}, pulseLikes: likes, pulsePosts, pulseComments, pulseReported }; await savePrototypeProgress({ payload: JSON.stringify(progress) }).catch(() => {}); await convexSignOut(); window.localStorage.removeItem(pageStorageKey(authUser.email)); setProgressReady(false); setAuthScreen(false); setSelected(null); setPage("home"); setDemo(false); }} /> : <FeatureGate eyebrow="YOUR FIELD GUIDE" title="Keep your plan in one place." description="Sign in to sync saved sets, preferences, and optional quest progress." action="Sign in" onAction={() => requestSignIn({ kind: "open-feature", destination: "profile", reason: "Sign in to open your private field guide." }, "Sign in to open your private field guide.")} />)}
+    {page === "profile" && (authUser ? <Profile name={displayName} email={authUser.email} icon={avatarIcon} outfit={outfit} equippedReward={equippedReward} coins={coins} completed={completed} savedCount={Object.keys(rsvps).length} favoriteArtists={favoriteArtists} setFavoriteArtists={setFavoriteArtists} go={go} complete={complete} signOut={async () => { await savePrototypeProgress({ payload: progressPayload }).catch(() => {}); await convexSignOut(); window.localStorage.removeItem(pageStorageKey(authUser.email)); setProgressReady(false); setAuthScreen(false); setSelected(null); setPage("home"); setDemo(false); }} /> : <FeatureGate eyebrow="YOUR FIELD GUIDE" title="Keep your plan in one place." description="Sign in to sync saved sets, preferences, and optional quest progress." action="Sign in" onAction={() => requestSignIn({ kind: "open-feature", destination: "profile", reason: "Sign in to open your private field guide." }, "Sign in to open your private field guide.")} />)}
     {page === "more" && <More signedIn={Boolean(authUser)} go={go} signIn={(destination, reason) => requestSignIn(destination ? { kind: "open-feature", destination, reason } : null, reason)} />}
     {page === "onboarding" && <Identity name={displayName} setName={setDisplayName} icon={avatarIcon} setIcon={setAvatarIcon} finish={() => { complete(festivalQuests[0]); go("avatar"); }} />}
     {page === "avatar" && <AvatarCloset icon={avatarIcon} setIcon={setAvatarIcon} outfit={outfit} setOutfit={setOutfit} purchased={purchasedRewards} equippedReward={equippedReward} setEquippedReward={setEquippedReward} finish={() => { complete(festivalQuests[1]); go("quests"); }} />}
@@ -460,8 +486,6 @@ function AvatarCloset({ icon, setIcon, outfit, setOutfit, purchased, equippedRew
   const avatarRewards = purchased.filter((id) => rewardNames[id]);
   return <section className="closet"><p className="kicker">QUEST 1.2 · 30–60 SEC</p><h1>Festival fit.</h1><p>Make the avatar feel like you. Choose a style, hairstyle, optional hat, skin tone, and festival layers.</p><div className="avatar-builder"><OutfitAvatar outfit={outfit} rewardId={equippedReward || undefined} /><div className="fit-recap"><span>YOUR LOOK</span><b>{equippedReward ? rewardNames[equippedReward] : outfit.top}</b><p>{outfit.body} · {outfit.skinTone} skin · {outfit.hair} hair · {outfit.hat === "None" ? "No hat" : outfit.hat} · {outfit.bottom}</p><small>{equippedReward ? "Purchased reward equipped." : "Purchased avatar rewards appear in your closet below."}</small></div></div>{avatarRewards.length > 0 && <fieldset className="purchased-fit-options"><legend>Purchased avatar rewards</legend><button className={!equippedReward ? "selected" : ""} onClick={() => setEquippedReward("")}>None</button>{avatarRewards.map((id) => <button key={id} className={equippedReward === id ? "selected" : ""} onClick={() => setEquippedReward(id)}>{rewardNames[id]} {equippedReward === id ? "✓" : ""}</button>)}</fieldset>}<div className="closet-grid">{(Object.entries(options) as [keyof Outfit, Outfit[keyof Outfit][]][]).map(([key, values]) => <fieldset key={key}><legend>{labels[key] || key}</legend>{values.map((value) => <button key={value} className={outfit[key] === value ? "selected" : ""} onClick={() => setOutfit({ ...outfit, [key]: value } as Outfit)}>{value}</button>)}</fieldset>)}</div><p className="label">Profile icon</p><div className="icon-picker mini">{["✦", "☼", "✹", "☾", "♣", "◒"].map((option) => <button key={option} className={icon === option ? "selected" : ""} onClick={() => setIcon(option)}>{option}</button>)}</div><button className="primary" onClick={finish}>Save festival fit · +15 Sparks</button></section>;
 }
-function Crew({ status, setStatus, expiresAt, finish }: { status: string; setStatus: (status: string) => void; expiresAt: number; finish: () => void }) { const [friend, setFriend] = useState(""); const minutes = Math.max(0, Math.ceil((expiresAt - Date.now()) / 60_000)); return <section className="crew-page"><p className="kicker">QUEST 1.3 · 30 SEC</p><h1>Build your crew.</h1><p>Share a temporary status—never your exact coordinates. Each status expires after 30 minutes.</p><div className="crew-code"><span>YOUR CREW CODE</span><b>FOG-72Q</b><button className="outline" onClick={() => navigator.clipboard?.writeText("FOG-72Q").then(() => {})}>Copy code</button></div><label>Add a friend code<input value={friend} onChange={(event) => setFriend(event.target.value)} placeholder="e.g. MIST-14X" /></label><div className="status-grid">{crewStatuses.map((option) => <button key={option} className={status === option ? "selected" : ""} onClick={() => setStatus(option)}>{option}</button>)}</div><p className="status-expiry">Current status: <b>{status || "No current status"}</b>{status ? ` · clears in ${minutes} min` : ""}</p><button className="primary" disabled={friend.trim().length < 3} onClick={finish}>Add friend · +20 Sparks</button></section>; }
-
 function FestivalMap({ mapViews, setMapViews }: { mapViews: string[]; setMapViews: (values: string[]) => void }) {
   const [routeShown, setRouteShown] = useState(false);
   const places = { "Festival area": { lat: 37.7694, lon: -122.4862 }, "Lands End": { lat: 37.7714, lon: -122.4895 }, "Twin Peaks": { lat: 37.7668, lon: -122.4837 }, Panhandle: { lat: 37.7657, lon: -122.4902 }, "Medical & wellness": { lat: 37.7679, lon: -122.4856 }, "Entrances & exits": { lat: 37.7647, lon: -122.4878 } };
@@ -479,29 +503,6 @@ function FestivalMap({ mapViews, setMapViews }: { mapViews: string[]; setMapView
 
 function Discover({ events: shown, notice, query, setQuery, searchKind, setSearchKind, locationLabel, locationQuery, setLocationQuery, locationResults, locationNotice, findLocation, chooseLocation, rsvps, onRsvp, onOpen }: { events: Event[]; notice: string; query: string; setQuery: (value: string) => void; searchKind: SearchKind; setSearchKind: (value: SearchKind) => void; locationLabel: string; locationQuery: string; setLocationQuery: (value: string) => void; locationResults: Location[]; locationNotice: string; findLocation: () => void; chooseLocation: (location: Location) => void; rsvps: Record<string, RsvpStatus>; onRsvp: (event: Event) => void; onOpen: (event: Event) => void }) { const placeholder = searchKind === "artist" ? "Search an artist, e.g. Billie Eilish" : searchKind === "venue" ? "Search a venue, e.g. The Fillmore" : "Search an event title, e.g. Outside Lands"; return <section><div className="lineup-hero"><p className="kicker">BROWSE BEFORE YOU SIGN IN</p><h1>Find the set<br /><em>worth planning around.</em></h1><p>{notice}</p></div><form className="location-search" onSubmit={(event) => { event.preventDefault(); findLocation(); }}><label>Current city <span>{locationLabel}</span><input value={locationQuery} onChange={(event) => setLocationQuery(event.target.value)} placeholder="Change city, e.g. San Francisco" /></label><button className="outline" type="submit">Find city</button></form>{locationNotice && <p className="location-note" role="status">{locationNotice}</p>}{locationResults.length > 0 && <div className="location-results">{locationResults.map((location) => <button key={location.id} type="button" onClick={() => chooseLocation(location)}>{location.label}</button>)}</div>}<div className="discover-tools"><label className="search">⌕ <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={placeholder} /></label><label className="search-kind">Search by<select value={searchKind} onChange={(event) => setSearchKind(event.target.value as SearchKind)}><option value="event">Event title</option><option value="artist">Artist</option><option value="venue">Venue</option></select></label></div><p className="search-help">Each listing shows its actual source. Saving is the first point where JamQuest asks for an account.</p><div className="section-title"><h2>Upcoming near {locationLabel}</h2><span>{shown.length} listing{shown.length === 1 ? "" : "s"}</span></div><div className="event-grid">{shown.map((event) => <EventCard key={event.id} event={event} rsvp={rsvps[event.id]} onRsvp={() => onRsvp(event)} onOpen={() => onOpen(event)} />)}</div>{!shown.length && <div className="empty"><b>No listings loaded for {locationLabel}.</b><span>{notice}</span></div>}</section>; }
 function EventDetail({ event, rsvp, onRsvp }: { event: Event; rsvp?: RsvpStatus; onRsvp: () => void }) { const background = event.image.startsWith("https://") ? `linear-gradient(0deg,#061f27dd,#061f2744),url("${event.image}") center/cover` : event.image; return <section><div className="detail-hero festival-detail" style={{ background }}><div className="hero-overlay"><p>{event.genre.toUpperCase()} · {event.source === "demo" ? "EXAMPLE LISTING" : event.source.toUpperCase()}</p><h1>{event.name}</h1><p>{event.artists.join(" · ")}</p></div></div><div className="detail-grid"><div><div className="date-row"><b>{event.date}</b><span>{event.time}</span><span>·</span><span>{event.venue}, {event.city}</span></div><p className="source">Source: {event.source === "demo" ? "JamQuest example data" : event.source} · ticket links open a third-party provider.</p><div className="rsvp-row"><button className={rsvp ? "rsvp yes" : "rsvp"} onClick={onRsvp}>{rsvp === "going" ? "✓ Going · change to Interested" : rsvp === "interested" ? "✓ Interested · mark Going" : "＋ Save as Interested"}</button>{event.ticketUrl && <a className="primary" href={event.ticketUrl} target="_blank" rel="noreferrer">Tickets ↗</a>}</div><section className="detail-section"><div className="section-title"><h2>Planning status</h2><span>Event-specific</span></div><div className="route-callout"><span>◷</span><div><b>Schedule and venue tools</b><p>This listing can be saved to your plan. Festival maps and quests appear only for events that provide those capabilities.</p></div><span className="capability-label">NO FESTIVAL QUESTS</span></div></section></div><aside className="side-card"><p className="eyebrow">FIELD NOTE</p><h3>Plan lightly.</h3><p>Save a few sets and leave room for changes. Interested and Going stay distinct in your plan.</p><hr /><b>Source-aware</b><p className="muted">JamQuest labels external listings and does not imply organizer verification.</p></aside></div></section>; }
-function Feed({ name, icon, likes, toggleLike, userPosts, setUserPosts, newComments, setNewComments, reported, setReported }: { name: string; icon: string; likes: string[]; toggleLike: (id: string) => void; userPosts: FeedItem[]; setUserPosts: React.Dispatch<React.SetStateAction<FeedItem[]>>; newComments: Record<string, PulseComment[]>; setNewComments: React.Dispatch<React.SetStateAction<Record<string, PulseComment[]>>>; reported: string[]; setReported: React.Dispatch<React.SetStateAction<string[]>> }) {
-  const [clock, setClock] = useState(() => Date.now());
-  useEffect(() => { const timer = window.setInterval(() => setClock(Date.now()), 30_000); return () => window.clearInterval(timer); }, []);
-  const relativeTime = (value: string) => { const timestamp = Date.parse(value); if (!Number.isFinite(timestamp)) return value; const seconds = Math.max(0, Math.floor((clock - timestamp) / 1000)); if (seconds < 60) return "Just now"; const minutes = Math.floor(seconds / 60); if (minutes < 60) return `${minutes}m ago`; const hours = Math.floor(minutes / 60); if (hours < 24) return `${hours}h ago`; const days = Math.floor(hours / 24); return `${days}d ago`; };
-  const latestUserTime = userPosts[0]?.time || "";
-  const stories = [["Maya", "☼", "Golden hour at Lands End ✦", "8m ago"], ["Jordan", "✦", "Found a new favorite at Twin Peaks.", "24m ago"], ["Dani", "◒", "Crew break beneath the eucalyptus trees.", "1h ago"], ["You", icon, userPosts[0]?.caption || "Your next field note starts here.", latestUserTime ? relativeTime(latestUserTime) : "No updates yet"]] as const;
-  const [activeStory, setActiveStory] = useState<(typeof stories)[number] | null>(null);
-  const [openComments, setOpenComments] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [replyingTo, setReplyingTo] = useState<Record<string, string | undefined>>({});
-  const [reportTarget, setReportTarget] = useState<{ key: string; label: string } | null>(null);
-  const [reportReason, setReportReason] = useState("Harassment or bullying");
-  const [reportDetails, setReportDetails] = useState("");
-  const [postDraft, setPostDraft] = useState("");
-  const [postMoment, setPostMoment] = useState("Festival moment");
-  const addComment = (id: string) => { const text = (drafts[id] || "").trim(); if (!text) return; const replyTo = replyingTo[id]; const comment = { id: `${id}-${Date.now()}`, text, ...(replyTo ? { replyTo } : {}) }; setNewComments((current) => ({ ...current, [id]: [...(current[id] || []), comment] })); setDrafts((current) => ({ ...current, [id]: "" })); setReplyingTo((current) => ({ ...current, [id]: undefined })); };
-  const deleteComment = (postId: string, commentId: string) => setNewComments((current) => ({ ...current, [postId]: (current[postId] || []).filter((comment) => comment.id !== commentId && comment.replyTo !== commentId) }));
-  const submitReport = () => { if (!reportTarget || !reportDetails.trim()) return; setReported((current) => [...current, reportTarget.key]); setReportTarget(null); setReportDetails(""); };
-  const publishPost = () => { const caption = postDraft.trim(); if (!caption) return; const createdAt = new Date().toISOString(); setUserPosts((current) => [{ id: `user-${Date.now()}`, user: name || "You", handle: "you", action: "shared a field note from", event: postMoment, caption, time: createdAt, likes: 0, comments: 0, color: "#6f9f78" }, ...current]); setClock(Date.now()); setPostDraft(""); };
-  const deletePost = (id: string) => { setUserPosts((current) => current.filter((post) => post.id !== id)); setNewComments((current) => { const next = { ...current }; delete next[id]; return next; }); setReported((current) => current.filter((key) => !key.includes(id))); if (likes.includes(id)) toggleLike(id); if (openComments === id) setOpenComments(null); };
-  const pulseItems = [...userPosts, ...feed];
-  return <section className="feed-wrap"><div className="feed-head"><div><p className="kicker">THE FIELD NOTES</p><h1>Little moments<br /><em>in the fog.</em></h1></div><span className="map-key">Crew-safe feed</span></div><div className="pulse-composer"><div className="pulse-composer-head"><Avatar name={name || "You"} icon={icon} /><div><b>Share with Pulse</b><span>Post a moment without sharing your exact location.</span></div></div><textarea value={postDraft} maxLength={280} onChange={(event) => setPostDraft(event.target.value)} placeholder="What little moment did you find in the fog?" aria-label="Write a Pulse post" /><div className="pulse-composer-actions"><label>Moment<select value={postMoment} onChange={(event) => setPostMoment(event.target.value)}><option>Festival moment</option><option>Artist discovery</option><option>Crew update</option><option>Food or art find</option><option>Quest celebration</option></select></label><span>{postDraft.length}/280</span><button className="primary" disabled={!postDraft.trim()} onClick={publishPost}>Post to Pulse</button></div></div><div className="story-row">{stories.map((story) => <button type="button" key={story[0]} onClick={() => setActiveStory(story)} aria-label={`Open ${story[0]}'s field note`}><Avatar name={story[0]} icon={story[1]} /><span>{story[0]}</span></button>)}</div>{activeStory && <div className="pulse-story" role="dialog" aria-modal="false" aria-label={`${activeStory[0]}'s field note`}><button type="button" className="pulse-story-close" onClick={() => setActiveStory(null)} aria-label="Close field note">×</button><Avatar name={activeStory[0]} icon={activeStory[1]} large /><div><p className="eyebrow">{activeStory[0]} · {activeStory[3].toUpperCase()}</p><h2>{activeStory[2]}</h2><p>Shared with the JamQuest community—never with an exact live location.</p></div></div>}<div className="feed-list">{pulseItems.map((item: FeedItem) => { const added = newComments[item.id] || []; const commentsOpen = openComments === item.id; const postReportKey = `post-${item.id}`; const isReported = reported.includes(postReportKey); return <article className="feed-card" key={item.id}><header><Avatar name={item.user} icon={item.id.startsWith("user-") ? icon : "✦"} /><div><b>{item.user}</b><p>{item.action} <strong>{item.event}</strong> · {relativeTime(item.time)}</p></div></header>{item.points && <button type="button" className="feed-visual" onClick={() => toggleLike(item.id)} style={{ background: `linear-gradient(130deg, ${item.color}, #07303a)` }} aria-label={`${likes.includes(item.id) ? "Unlike" : "Like"} ${item.user}'s signal`}><span>SIGNAL CLAIMED</span><b>{item.event}</b><i>✹ +{item.points} Sparks</i></button>}<p className="caption">{item.caption}</p><footer><button className={likes.includes(item.id) ? "liked" : ""} onClick={() => toggleLike(item.id)} aria-pressed={likes.includes(item.id)}>♥ {item.likes + (likes.includes(item.id) ? 1 : 0)}</button><button className={commentsOpen ? "active" : ""} onClick={() => setOpenComments(commentsOpen ? null : item.id)}>◌ {added.length}</button>{item.id.startsWith("user-") ? <button className="delete-post" onClick={() => deletePost(item.id)}>Delete post</button> : <button className={isReported ? "reported" : ""} disabled={isReported} onClick={() => setReportTarget({ key: postReportKey, label: `${item.user}’s post` })}>{isReported ? "✓ Reported" : "Report"}</button>}</footer>{commentsOpen && <div className="pulse-comments">{added.map((comment) => <div className={`pulse-comment ${comment.replyTo ? "reply" : ""}`} key={comment.id}>{comment.replyTo && <small>Replying to {comment.replyTo}</small>}<div><b>You <span className="comment-user-icon">{icon}</span></b><p>{comment.text}</p></div><div className="pulse-comment-actions"><button onClick={() => setReplyingTo((current) => ({ ...current, [item.id]: "You" }))}>Reply</button><button onClick={() => deleteComment(item.id, comment.id)}>Delete</button></div></div>)}{replyingTo[item.id] && <div className="replying-banner">Replying to <b>{replyingTo[item.id]}</b><button onClick={() => setReplyingTo((current) => ({ ...current, [item.id]: undefined }))}>×</button></div>}<form onSubmit={(event) => { event.preventDefault(); addComment(item.id); }}><input value={drafts[item.id] || ""} onChange={(event) => setDrafts((current) => ({ ...current, [item.id]: event.target.value }))} placeholder={replyingTo[item.id] ? `Reply to ${replyingTo[item.id]}…` : "Add a kind field note…"} aria-label={`Comment on ${item.user}'s post`} /><button className="primary" type="submit" disabled={!(drafts[item.id] || "").trim()}>Post</button></form></div>}</article>; })}</div>{reportTarget && <div className="pulse-report-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setReportTarget(null); }}><section className="pulse-report" role="dialog" aria-modal="true" aria-labelledby="pulse-report-title"><button className="pulse-report-close" onClick={() => setReportTarget(null)} aria-label="Close report form">×</button><p className="eyebrow">PRIVATE REPORT</p><h2 id="pulse-report-title">Tell us what happened.</h2><p>Reporting {reportTarget.label}. Your explanation helps moderators review the right issue.</p><label>Reason<select value={reportReason} onChange={(event) => setReportReason(event.target.value)}><option>Harassment or bullying</option><option>Hate or discrimination</option><option>Spam or misleading content</option><option>Unsafe festival information</option><option>Something else</option></select></label><label>What should moderators know?<textarea value={reportDetails} onChange={(event) => setReportDetails(event.target.value)} placeholder="Briefly explain why you’re reporting this…" /></label><div><button className="outline" onClick={() => setReportTarget(null)}>Cancel</button><button className="primary" disabled={!reportDetails.trim()} onClick={submitReport}>Submit report</button></div></section></div>}</section>;
-}
 function RewardPreviewVisual({ itemId, outfit }: { itemId: string; outfit: Outfit }) {
   if (itemId === "trail-stamp") return <div className="reward-visual trail-preview"><div className="trail-stage one">LANDS END</div><div className="trail-line" /><div className="trail-stage two">TWIN PEAKS</div><span>✦ YOUR DISCOVERY TRAIL</span></div>;
   if (itemId === "poster") return <div className="reward-visual poster-preview"><article><span>CHAPTER 01</span><b>THE SIGNAL<br />STARTS HERE</b></article><article><span>CHAPTER 02</span><b>DEEPER INTO<br />THE FOG</b></article></div>;

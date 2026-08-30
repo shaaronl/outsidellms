@@ -13,7 +13,7 @@ As of August 19, 2026, Phase 1 is connected to the Convex development deployment
 | Runtime | Current implementation | Limitation |
 | --- | --- | --- |
 | Local Next.js | React uses Convex Auth and generated Convex APIs directly | Connected to development Convex; not evidence of preview/production readiness |
-| Static production worker | Public provider routes remain in the worker; legacy D1 auth/progress routes return `410 Gone` | Must receive the correct production Convex URL at build time |
+| Static production worker | Public provider routes remain in the worker; legacy D1 auth/progress code has been removed | Must receive the correct production Convex URL at build time |
 | Convex development | Auth signing, profiles/settings, events/occurrences, RSVPs, schedule, and Today functions are deployed | Password auth is development-only until verification/recovery is configured |
 
 Additional gaps:
@@ -256,7 +256,7 @@ The switch must avoid two active account systems.
 7. Switch reads to Convex behind a local feature flag; compare results during development.
 8. Switch writes to Convex. Do not dual-write to JSON/D1 without a designed reconciliation process.
 9. Remove frontend dependency on `/api/auth/*` and `/api/progress`.
-10. Remove or archive `.data` auth for local use and the embedded D1 auth/progress implementation after migration evidence passes.
+10. Keep legacy `.data`/D1 auth removed; do not reintroduce a second account system.
 11. Verify one account and RSVP across two browsers in preview, then production canary.
 
 No fake local accounts should be migrated to production. If real D1 users already exist, write a one-time, auditable migration plan with explicit identity linking and user communication before any transfer.
